@@ -62,23 +62,38 @@ function detectSubjectFromText(raw) {
   return subject;
 }
 
+// ── SSE helper — sends a single event ────────────────────────────────────────
+function sseWrite(res, event, data) {
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', key: KEY ? `${KEY.slice(0,8)}...` : 'MISSING' });
 });
 
-// ── POST /analyze ─────────────────────────────────────────────────────────────
+// ── POST /analyze  (streaming via SSE) ───────────────────────────────────────
+// Returns a text/event-stream with events:
+//   subject  { subject }          — sent as soon as detection is done
+//   chunk    { text }             — streamed tokens from Gemini
+//   done     { observation }      — full text when complete
+//   error    { error }
 app.post('/analyze', async (req, res) => {
   const { image, subjectOverride } = req.body;
   if (!image) return res.status(400).json({ error: 'Missing image' });
 
+  // Set up SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
   try {
-    console.log(`[${new Date().toISOString()}] Analyzing frame...`);
+    console.log(`[${new Date().toISOString()}] Analyzing frame (streaming)...`);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-    // Step 1: Detect subject
+    // Step 1: Detect subject (fast, non-streamed)
     let subject = subjectOverride || null;
-
     if (!subject) {
       const detectResult = await model.generateContent([
         { inlineData: { mimeType: 'image/jpeg', data: image } },
@@ -87,65 +102,164 @@ app.post('/analyze', async (req, res) => {
       subject = detectSubjectFromText(detectResult.response.text());
     }
 
-    // Step 2: Full analysis with persona
-    const persona = PERSONAS[subject] || PERSONAS.Other;
+    // Send subject immediately so badge updates before streaming starts
+    sseWrite(res, 'subject', { subject });
 
-    const analyzeResult = await model.generateContent([
+    // Step 2: Stream the full analysis
+    const persona = PERSONAS[subject] || PERSONAS.Other;
+    const streamResult = await model.generateContentStream([
       { inlineData: { mimeType: 'image/jpeg', data: image } },
       {
         text: `${persona}
 
 ---
-A student has shown you the image above.
-Identify what is written or drawn, then respond fully as your persona.
-- Solve math/science problems step by step
-- Answer questions completely
-- Explain diagrams deeply
-- Use markdown: **bold**, bullets, code blocks, LaTeX for equations
-- End with ONE guiding question`,
+A student has shown you the image above. Respond fully as your persona using this EXACT format:
+
+## 📌 What I See
+One sentence describing what is on the page.
+
+## 🧠 Solution
+
+For each step use this format:
+---
+### Step N: [Name of step]
+[Explanation of what we are doing and why]
+
+💡 **Key idea:** [One sentence insight]
+
+[Working / equation / code]
+
+**Result:** [What we got]
+
+---
+Repeat for every step. Never skip steps. Never combine steps.
+
+## ✅ Final Answer
+State the final answer clearly in bold.
+
+## 🤔 Think About This
+End with exactly ONE Socratic question to make the student think deeper.
+
+Rules:
+- Use LaTeX for ALL equations: inline $x$ and block $$x$$
+- Use syntax-highlighted code blocks for all code
+- Make each step visually distinct with the --- divider
+- Bold all key terms on first use
+- Never give the answer before showing the working`,
       },
     ]);
 
-    const observation = analyzeResult.response.text();
-    console.log(` -> done. subject=${subject}`);
-    res.json({ observation, subject });
+    // Stream chunks to client
+    let fullText = '';
+    for await (const chunk of streamResult.stream) {
+      const text = chunk.text();
+      if (text) {
+        fullText += text;
+        sseWrite(res, 'chunk', { text });
+      }
+    }
+
+    sseWrite(res, 'done', { observation: fullText, subject });
+    console.log(` -> stream complete. subject=${subject}, chars=${fullText.length}`);
+    res.end();
 
   } catch (err) {
     console.error('Gemini error:', err.message);
-    res.status(500).json({ error: err.message });
+    sseWrite(res, 'error', { error: err.message });
+    res.end();
   }
 });
 
-// ── POST /chat ────────────────────────────────────────────────────────────────
+// ── POST /chat  (streaming via SSE) ──────────────────────────────────────────
+// Returns a text/event-stream with events:
+//   chunk  { text }
+//   done   { reply }
+//   error  { error }
 app.post('/chat', async (req, res) => {
   const { message, history = [], subject = 'Other' } = req.body;
   if (!message) return res.status(400).json({ error: 'Missing message' });
 
+  // Set up SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
   try {
-    console.log(`[${new Date().toISOString()}] Chat [${subject}]: "${message}"`);
-    const persona = PERSONAS[subject] || PERSONAS.Other;
+    console.log(`[${new Date().toISOString()}] Chat stream [${subject}]: "${message}"`);
+
+    // Re-detect subject from the chat message itself
+    // If the message is off-topic from the current subject, switch persona
+    const detectModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const detectResult = await detectModel.generateContent([
+      { text: `What school subject is this question about? Message: "${message}". Binary numbers = Math. Code = ComputerScience. If it is a general knowledge or history question, say History. Choose ONE: Math, Physics, Chemistry, Biology, ComputerScience, History, Literature, Economics, Other. Reply with single word only.` }
+    ]);
+    const detectedSubject = detectSubjectFromText(detectResult.response.text());
+    // Use detected subject unless it's Other (fallback to current subject)
+    const activeSubject = detectedSubject !== 'Other' ? detectedSubject : subject;
+    console.log(` -> Chat subject: ${activeSubject} (was: ${subject})`);
+
+    const persona = PERSONAS[activeSubject] || PERSONAS.Other;
 
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
-      systemInstruction: `${persona}\n\n---\nStay in character. Use markdown. Give teaching-focused answers.`,
+      systemInstruction: `${persona}
+
+---
+You are tutoring a student. Format ALL responses like this:
+
+For explanations or new concepts:
+## 🧠 [Topic Name]
+[Explanation]
+**Key idea:** [insight]
+
+For step-by-step solutions:
+---
+### Step N: [Step Name]
+[What we do and why]
+💡 **Key idea:** [insight]
+[Working]
+**Result:** [outcome]
+---
+
+For final answers: use ## ✅ Final Answer with the answer clearly stated.
+Always end with one ## 🤔 Think About This question.
+Use LaTeX for equations, syntax-highlighted code blocks for code.
+Never give the answer before showing the full working.`,
     });
 
     const chat = model.startChat({
       history: history.map(h => ({ role: h.role, parts: [{ text: h.content }] })),
     });
 
-    const result = await chat.sendMessage(message);
-    const reply  = result.response.text();
-    console.log(` -> ${reply.slice(0, 80)}...`);
-    res.json({ reply });
+    // Send detected subject to frontend so badge updates
+    if (activeSubject !== subject) {
+      sseWrite(res, 'subject', { subject: activeSubject });
+    }
+
+    const streamResult = await chat.sendMessageStream(message);
+
+    let fullReply = '';
+    for await (const chunk of streamResult.stream) {
+      const text = chunk.text();
+      if (text) {
+        fullReply += text;
+        sseWrite(res, 'chunk', { text });
+      }
+    }
+
+    sseWrite(res, 'done', { reply: fullReply });
+    console.log(` -> chat stream complete. chars=${fullReply.length}`);
+    res.end();
 
   } catch (err) {
     console.error('Chat error:', err.message);
-    res.status(500).json({ error: err.message });
+    sseWrite(res, 'error', { error: err.message });
+    res.end();
   }
 });
 
-// ── POST /generate-image ──────────────────────────────────────────────────────
+// ── POST /generate-image  (not streamed — image gen doesn't support it) ───────
 app.post('/generate-image', async (req, res) => {
   const { prompt, subject = 'Other' } = req.body;
   if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
@@ -181,14 +295,12 @@ app.post('/generate-image', async (req, res) => {
     if (!response.ok) return res.status(500).json({ error: json.error?.message || 'Image generation failed' });
 
     let imageBase64 = null, mimeType = 'image/png', caption = null;
-
     for (const part of json.candidates?.[0]?.content?.parts ?? []) {
       if (part.inlineData?.data) { imageBase64 = part.inlineData.data; mimeType = part.inlineData.mimeType || 'image/png'; }
       else if (part.text) { caption = part.text; }
     }
 
     if (!imageBase64) return res.json({ imageBase64: null, caption: caption || 'Could not generate image.' });
-
     console.log(` -> image OK (${Math.round(imageBase64.length * 0.75 / 1024)} KB)`);
     res.json({ imageBase64, mimeType, caption });
 
@@ -200,5 +312,9 @@ app.post('/generate-image', async (req, res) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}\n`);
+  console.log(`🚀 Backend on http://localhost:${PORT}`);
+  console.log(`  GET  /health         - status check`);
+  console.log(`  POST /analyze        - streaming vision analysis`);
+  console.log(`  POST /chat           - streaming chat`);
+  console.log(`  POST /generate-image - image generation\n`);
 });
