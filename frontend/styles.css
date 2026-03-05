@@ -1319,3 +1319,197 @@ html[data-theme="light"]       .theme-icon.sun  { color: var(--text-mid); }
   color: var(--text);
   outline: none;
 }
+
+/* ── Streaming cursor ──────────────────────────────────────────────────────── */
+.stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  background: var(--text);
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  animation: blink 0.7s step-end infinite;
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+.msg.streaming .msg-bubble {
+  opacity: 0.92;
+}
+
+/* ── Stream plain text (while streaming, before markdown render) ───────────── */
+.stream-plain {
+  font-family: inherit;
+  font-size: inherit;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  line-height: 1.6;
+}
+
+/* ── Textbook-style AI response formatting ─────────────────────────────────── */
+
+/* Wider bubble for AI responses */
+.msg.ai .msg-bubble {
+  max-width: 100%;
+  width: 100%;
+  padding: 20px 24px;
+  line-height: 1.75;
+  font-size: 14px;
+}
+
+/* ── Headers ── */
+.msg-bubble h1 {
+  font-size: 22px;
+  font-weight: 700;
+  font-style: normal;
+  font-family: inherit;
+  letter-spacing: -0.3px;
+  color: var(--text);
+  margin: 28px 0 10px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border-hi);
+}
+
+.msg-bubble h2 {
+  font-size: 17px;
+  font-weight: 700;
+  font-style: normal;
+  font-family: inherit;
+  color: var(--text);
+  margin: 24px 0 8px;
+  padding: 8px 14px;
+  background: var(--border);
+  border-left: 4px solid var(--text-muted);
+  border-radius: 0 4px 4px 0;
+}
+
+/* Emoji section headers like ## 📌 ## 🧠 ## ✅ ## 🤔 */
+.msg-bubble h2:has(> :first-child) {
+  font-size: 16px;
+}
+
+.msg-bubble h3 {
+  font-size: 14px;
+  font-weight: 700;
+  font-style: normal;
+  font-family: inherit;
+  color: var(--text);
+  margin: 20px 0 6px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.msg-bubble h3::before {
+  content: '';
+  display: inline-block;
+  width: 3px;
+  height: 14px;
+  background: var(--text-muted);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Horizontal rules between steps ── */
+.msg-bubble hr {
+  border: none;
+  border-top: 1px solid var(--border-hi);
+  margin: 20px 0;
+}
+
+/* ── Key idea callout (blockquote used for 💡) ── */
+.msg-bubble blockquote {
+  border-left: 3px solid #f59e0b;
+  background: color-mix(in srgb, #f59e0b 8%, transparent);
+  padding: 10px 16px;
+  margin: 12px 0;
+  border-radius: 0 6px 6px 0;
+  color: var(--text);
+  font-style: normal;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* ── Strong / bold ── */
+.msg-bubble strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── Lists ── */
+.msg-bubble ul, .msg-bubble ol {
+  padding-left: 22px;
+  margin: 8px 0 12px;
+}
+
+.msg-bubble li {
+  margin-bottom: 6px;
+  line-height: 1.75;
+  padding-left: 4px;
+}
+
+.msg-bubble li::marker {
+  color: var(--text-muted);
+}
+
+/* ── Paragraphs ── */
+.msg-bubble p {
+  margin-bottom: 12px;
+  line-height: 1.8;
+}
+
+/* ── Code blocks ── */
+.msg-bubble pre {
+  background: var(--code-block-bg);
+  border: 1px solid var(--border-hi);
+  border-radius: 6px;
+  padding: 16px 18px;
+  margin: 14px 0;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.msg-bubble pre code {
+  font-size: 12.5px;
+}
+
+/* ── Inline code ── */
+.msg-bubble code {
+  font-size: 12.5px;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+/* ── Final answer section — make it pop ── */
+.msg-bubble h2:last-of-type,
+.msg-bubble h2 + p strong:only-child {
+  color: var(--text);
+}
+
+/* ── Think About This — subtle highlight ── */
+.msg-bubble p:last-of-type {
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--border) 50%, transparent);
+  border-radius: 6px;
+  font-style: italic;
+  color: var(--text-mid);
+}
+
+/* First child header no top margin */
+.msg-bubble > h1:first-child,
+.msg-bubble > h2:first-child,
+.msg-bubble > h3:first-child {
+  margin-top: 0;
+}
