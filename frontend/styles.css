@@ -846,26 +846,27 @@ html[data-theme="light"]       .theme-icon.sun  { color: var(--text-mid); }
 /* Copy button — always visible, tap friendly */
 .copy-btn {
   align-self: flex-start;
-  background: transparent;
-  border: 1px solid var(--border);
+  background: none;
+  border: none;
   color: var(--text-dim);
   font-family: 'Geist Mono', monospace;
   font-size: 9.5px;
-  letter-spacing: 1px;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
-  padding: 5px 11px;
+  padding: 3px 6px;
   cursor: pointer;
-  opacity: 0.5;
-  transition: all 0.15s;
+  opacity: 0.7;
+  transition: color 0.15s, opacity 0.15s;
   border-radius: 2px;
-  min-height: 28px; /* tap target */
+  line-height: 1;
+  outline: none;
 }
 
-.msg.ai:hover .copy-btn { opacity: 1; }
+.msg.ai:hover .copy-btn { opacity: 0.7; }
 .copy-btn:hover,
-.copy-btn:focus { background: var(--surface); color: var(--text); border-color: var(--text-mid); opacity: 1; outline: none; }
+.copy-btn:focus { background: none; border: none; color: var(--text); opacity: 1; outline: none; }
 .copy-btn:active { transform: scale(0.97); }
-.copy-btn.copied { color: var(--pip-live); border-color: var(--pip-live); opacity: 1; }
+.copy-btn.copied { color: var(--pip-live); opacity: 1; }
 
 /* Thinking dots */
 .thinking-dots span {
@@ -1512,4 +1513,261 @@ html[data-theme="light"]       .theme-icon.sun  { color: var(--text-mid); }
 .msg-bubble > h2:first-child,
 .msg-bubble > h3:first-child {
   margin-top: 0;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   AI MESSAGE REDESIGN — clean editorial style
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Base bubble reset */
+.msg.ai .msg-bubble {
+  background: transparent;
+  border: none;
+  border-left: none;
+  padding: 4px 0 0 0;
+  width: 100%;
+  font-size: 15px;
+  line-height: 1.85;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Outer AI message wrapper — clean card */
+.msg.ai {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px 24px 16px;
+  margin-bottom: 2px;
+  width: 100%;
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* ── Section headers ── */
+.msg-bubble h2 {
+  font-size: 13px; font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  letter-spacing: 0; text-transform: none; color: var(--text);
+  margin: 24px 0 10px; padding: 0 0 6px 0;
+  background: none; border: none; border-bottom: 1px solid var(--border);
+  border-radius: 0; display: block;
+}
+.msg-bubble h2:first-child { margin-top: 0; }
+
+/* ── Step headers ── */
+.msg-bubble h3 {
+  font-size: 13px; font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  color: var(--text-mid); margin: 20px 0 6px; padding: 0;
+  background: none; border-radius: 0; display: block;
+  letter-spacing: 0; text-transform: none;
+}
+.msg-bubble h3::before { display: none; }
+
+/* ── Divider ── */
+.msg-bubble hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+
+/* ── Blockquote ── */
+.msg-bubble blockquote {
+  border: none; border-left: 2px solid var(--text-muted);
+  background: none; padding: 2px 0 2px 14px; margin: 10px 0;
+  color: var(--text-mid); font-style: normal; font-size: 13.5px;
+}
+
+/* ── Paragraphs ── */
+.msg-bubble p { margin-bottom: 10px; line-height: 1.85; color: var(--text); font-size: 15px; }
+.msg-bubble p:last-child { margin-bottom: 0; }
+.msg-bubble > p:last-of-type {
+  font-size: 13px; color: var(--text-mid);
+  border-top: 1px solid var(--border); margin-top: 14px; padding-top: 10px; font-style: italic;
+}
+
+/* ── Bold ── */
+.msg-bubble strong { font-weight: 600; color: var(--text); text-transform: none; letter-spacing: 0; }
+
+/* ── Lists ── */
+.msg-bubble ul, .msg-bubble ol { padding-left: 18px; margin: 6px 0 12px; }
+.msg-bubble li { margin-bottom: 5px; line-height: 1.75; padding-left: 2px; }
+.msg-bubble li::marker { color: var(--text-muted); }
+
+/* ── Inline code ── */
+.msg-bubble code {
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--code-inline-bg);
+  border: 1px solid var(--border-hi);
+  color: var(--text);
+}
+
+/* ── Code blocks ── */
+.msg-bubble pre {
+  background: var(--code-block-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin: 12px 0;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.msg-bubble pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: #c0c8c0;
+}
+
+/* ── Copy button — clean text button ── */
+/* ── Top-right button row ── */
+.msg-top-right {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.copy-btn,
+.export-btn {
+  font-size: 9.5px;
+  font-family: 'Geist Mono', monospace;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: none !important;
+  border: none !important;
+  padding: 3px 6px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: color 0.15s, opacity 0.15s;
+  border-radius: 2px;
+  line-height: 1;
+  outline: none;
+}
+
+.copy-btn:hover,
+.export-btn:hover { opacity: 1; color: var(--text); }
+.copy-btn.copied  { color: var(--pip-live); opacity: 1; }
+
+.btn-sep {
+  font-size: 9px;
+  color: var(--text-dim);
+  opacity: 0.3;
+  user-select: none;
+  padding: 0 1px;
+}
+
+/* ── Export dropdown ── */
+.export-wrap { position: relative; }
+
+.export-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border-hi);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 200;
+  min-width: 148px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+.export-menu.open { display: block; }
+
+.export-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 7px 12px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.4px;
+  color: var(--text-mid);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.export-item:hover { background: var(--border); color: var(--text); }
+
+/* ── msg.ai position for absolute children ── */
+.msg.ai { position: relative; }
+
+/* ── What I Saw footnote ── */
+.msg-seen-footnote { margin-top: 8px; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.msg-seen-toggle { font-size: 0.7rem; color: var(--text-dim); opacity: 0.75; cursor: pointer; user-select: none; font-family: 'Geist Mono', monospace; transition: opacity 0.15s; }
+.msg-seen-toggle:hover { opacity: 1; }
+.msg-seen-text { font-size: 0.7rem; color: var(--text-dim); opacity: 0.75; font-style: italic; display: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+.msg-seen-footnote.expanded .msg-seen-text { display: inline; }
+
+/* ── Message label ── */
+.msg-label {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.msg-time {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  margin-left: 6px;
+  color: var(--text-dim);
+  font-size: 10px;
+}
+
+/* ── LaTeX display blocks ── */
+.msg-bubble .katex-display {
+  margin: 14px 0;
+  overflow-x: auto;
+}
+
+/* ── Stream plain text (while streaming) ── */
+.stream-plain {
+  font-family: inherit;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-mid);
+  line-height: 1.8;
+}
+
+/* ── KaTeX overflow fix — no scrollbar, scale to fit ── */
+.msg-bubble .katex-display {
+  overflow-x: visible;
+  overflow-y: visible;
+}
+
+.msg-bubble .katex-display > .katex {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.msg-bubble .katex-display > .katex::-webkit-scrollbar {
+  display: none;
+}
+
+.msg-bubble .katex {
+  font-size: 1em;
 }

@@ -3,6 +3,7 @@ import { state }                               from './state.js';
 import { setStatus, showToast, nowTime }       from './ui.js';
 import { appendSys, appendAI, removeSysMsgs, appendStreamingAI } from './messages.js';
 import { updateSubjectBadge }                  from './subject.js';
+import { attachExportBtn }                     from './export.js';
 
 const API_BASE = 'http://localhost:3001';
 
@@ -172,12 +173,28 @@ export async function analyzeFrame() {
 }
 
 // ── Streaming bubble helpers (used only by camera.js) ─────────────────────────
+function toPlainText(md) {
+  return md
+    .replace(/<details>[\s\S]*?<\/details>/gi, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*(.+?)\*/g, '$1')
+    .replace(/`{3}[\s\S]*?`{3}/g, '')
+    .replace(/`(.+?)`/g, '$1')
+    .replace(/\$\$(.+?)\$\$/gs, '$1')
+    .replace(/\$(.+?)\$/g, '$1')
+    .replace(/^[-*]\s+/gm, '• ')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/^---+$/gm, '')
+    .replace(/💡\s*/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 function updateStreamingAI(el, markdown) {
   const bubble = el.querySelector('.msg-bubble');
   if (!bubble) return;
-  // Plain text while streaming — smooth, no layout thrash
   bubble.innerHTML = '<pre class="stream-plain">' + markdown.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre><span class="stream-cursor"></span>';
-  // Only scroll if user is near the bottom
   const msgs = document.getElementById('messages');
   const nearBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
   if (nearBottom) msgs.scrollTop = msgs.scrollHeight;
@@ -186,11 +203,13 @@ function updateStreamingAI(el, markdown) {
 function finaliseStreamingAI(el, markdown) {
   el.classList.remove('streaming');
 
-  // Full proper markdown render — replaces plain text stream
+  // Strip <details> block before rendering
+  const detailsMatch = markdown.match(/<details>[\s\S]*?<\/details>/i);
+  const cleanMarkdown = markdown.replace(/<details>[\s\S]*?<\/details>/i, '').trim();
+
   const bubble = el.querySelector('.msg-bubble');
   if (bubble) {
-    bubble.innerHTML = marked.parse(markdown);
-    // Remove any leftover streaming cursor
+    bubble.innerHTML = marked.parse(cleanMarkdown);
     bubble.querySelectorAll('.stream-cursor').forEach(c => c.remove());
     bubble.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
     renderMathInElement(bubble, {
@@ -204,21 +223,42 @@ function finaliseStreamingAI(el, markdown) {
     });
   }
 
-  // Add copy button
+  // Top-right row: copy + export
+  const topRight = document.createElement('div');
+  topRight.className = 'msg-top-right';
+
   const copyBtn = document.createElement('button');
   copyBtn.className = 'copy-btn';
   copyBtn.title = 'Copy response';
   copyBtn.textContent = 'Copy';
   copyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(markdown).then(() => {
+    navigator.clipboard.writeText(toPlainText(cleanMarkdown)).then(() => {
       copyBtn.textContent = 'Copied ✓';
       copyBtn.classList.add('copied');
       setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('copied'); }, 2000);
     });
   });
-  el.appendChild(copyBtn);
+  topRight.appendChild(copyBtn);
+  el.appendChild(topRight);
 
-  // Scroll to show final answer
+  // Export dropdown
+  attachExportBtn(el);
+
+  // "What I saw" footnote
+  if (detailsMatch) {
+    const seenText = detailsMatch[0]
+      .replace(/<summary>.*?<\/summary>/i, '')
+      .replace(/<\/?details>/gi, '')
+      .trim();
+    const footnote = document.createElement('div');
+    footnote.className = 'msg-seen-footnote';
+    footnote.innerHTML = `<span class="msg-seen-toggle">👁 what I saw</span><span class="msg-seen-text">${seenText}</span>`;
+    footnote.querySelector('.msg-seen-toggle').addEventListener('click', () => {
+      footnote.classList.toggle('expanded');
+    });
+    el.appendChild(footnote);
+  }
+
   const msgs = document.getElementById('messages');
   msgs.scrollTop = msgs.scrollHeight;
 }

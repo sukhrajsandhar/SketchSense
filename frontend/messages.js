@@ -93,10 +93,14 @@ export async function sendChat() {
           let event;
           try { event = JSON.parse(raw); } catch (_) { continue; }
           if (event.subject !== undefined) {
-            // Subject switched mid-chat — update badge
-            import('./subject.js').then(m => m.updateSubjectBadge(event.subject));
             state.currentSubject = event.subject;
+            import('./subject.js').then(m => m.updateSubjectBadge(event.subject));
+            // Create the bubble NOW with the correct persona name
+            if (!streamEl) streamEl = appendStreamingAI(null); // will be renamed below
+            updateStreamingLabel(streamEl, event.subject);
           } else if (event.text !== undefined) {
+            // Create bubble on first chunk if subject event didn't fire yet
+            if (!streamEl) streamEl = appendStreamingAI();
             fullReply += event.text;
             updateStreamingBubble(streamEl, fullReply);
           } else if (event.reply !== undefined || event.observation !== undefined) {
@@ -138,15 +142,31 @@ export function appendUser(text) {
 }
 
 // Creates an empty streaming bubble with a blinking cursor
-export function appendStreamingAI() {
+export function appendStreamingAI(nameOverride) {
   clearEmpty();
   const el = mkEl('div', 'msg ai streaming');
+  const name = nameOverride || tutorName();
   el.innerHTML = `
-    <div class="msg-label">${tutorName()} <span class="msg-time">${nowTime()}</span></div>
+    <div class="msg-label">${name} <span class="msg-time">${nowTime()}</span></div>
     <div class="msg-bubble"><span class="stream-cursor"></span></div>`;
   document.getElementById('messages').appendChild(el);
   scrollMsgs();
   return el;
+}
+
+// Update the label on an existing streaming bubble (called when subject event arrives)
+export function updateStreamingLabel(el, subject) {
+  const PERSONA_NAMES = {
+    Math: 'Prof. Maya', Physics: 'Dr. Arun', Chemistry: 'Dr. Sofia',
+    Biology: 'Dr. Kezia', ComputerScience: 'Alex', History: 'Prof. James',
+    Literature: 'Prof. Claire', Economics: 'Prof. David', Other: 'Sam',
+  };
+  const label = el.querySelector('.msg-label');
+  if (label) {
+    const time = label.querySelector('.msg-time');
+    label.textContent = PERSONA_NAMES[subject] || 'Sam';
+    if (time) label.appendChild(time);
+  }
 }
 
 // Update streaming bubble — plain text while streaming to avoid layout thrash
