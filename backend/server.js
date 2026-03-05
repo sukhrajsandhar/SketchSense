@@ -110,42 +110,43 @@ app.post('/analyze', async (req, res) => {
     const streamResult = await model.generateContentStream([
       { inlineData: { mimeType: 'image/jpeg', data: image } },
       {
-        text: `${persona}
+        text: `## RESPONSE FORMAT RULES — OVERRIDE YOUR PERSONA STYLE
 
----
-A student has shown you the image above. Respond fully as your persona using this EXACT format:
+STEP 1: Output this hidden block first, always:
+<details>
+<summary>📌 What I See</summary>
+[One sentence: what is written or drawn]
+</details>
 
-## 📌 What I See
-One sentence describing what is on the page.
+STEP 2: Classify the content, then respond EXACTLY as shown:
 
+━━━ SIMPLE: basic fact or trivial question (e.g. "what is 1+1", "what is the capital of France") ━━━
+ONE sentence answer. ONE sentence context. STOP. No follow-up question.
+EXAMPLE for "what is 1+1": 1 + 1 = 2. Adding one unit to another gives a total of two.
+NO headers. NO paragraphs. NO 🤔 question. 2 sentences MAX.
+
+━━━ MEDIUM: concept, diagram, or explain/why/how question ━━━
+## 🧠 [Topic]
+2–3 paragraphs with **bold key terms**.
+
+━━━ COMPLEX: equation to solve, proof, multi-step working ━━━
 ## 🧠 Solution
-
-For each step use this format:
 ---
-### Step N: [Name of step]
-[Explanation of what we are doing and why]
-
-💡 **Key idea:** [One sentence insight]
-
-[Working / equation / code]
-
-**Result:** [What we got]
-
+### Step [N]: [Name]
+[Explanation paragraph]
+💡 **Key idea:** [insight]
+$$[working]$$
+**Result:** [outcome]
 ---
-Repeat for every step. Never skip steps. Never combine steps.
-
 ## ✅ Final Answer
-State the final answer clearly in bold.
 
-## 🤔 Think About This
-End with exactly ONE Socratic question to make the student think deeper.
+RULES:
+- For SIMPLE: 2 sentences max. No headers. No enthusiasm. No follow-up question. STOP after context sentence.
+- LaTeX for math, code blocks for code.
 
-Rules:
-- Use LaTeX for ALL equations: inline $x$ and block $$x$$
-- Use syntax-highlighted code blocks for all code
-- Make each step visually distinct with the --- divider
-- Bold all key terms on first use
-- Never give the answer before showing the working`,
+---
+YOUR PERSONA (use this voice, obey format rules above):
+${persona}`,
       },
     ]);
 
@@ -188,54 +189,57 @@ app.post('/chat', async (req, res) => {
   try {
     console.log(`[${new Date().toISOString()}] Chat stream [${subject}]: "${message}"`);
 
-    // Re-detect subject from the chat message itself
-    // If the message is off-topic from the current subject, switch persona
+    // Always detect subject fresh from the latest message
+    let activeSubject = subject;
     const detectModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     const detectResult = await detectModel.generateContent([
-      { text: `What school subject is this question about? Message: "${message}". Binary numbers = Math. Code = ComputerScience. If it is a general knowledge or history question, say History. Choose ONE: Math, Physics, Chemistry, Biology, ComputerScience, History, Literature, Economics, Other. Reply with single word only.` }
+      { text: `What school subject is this question about? Judge only this message: "${message}". Choose ONE: Math, Physics, Chemistry, Biology, ComputerScience, History, Literature, Economics, Other. Reply single word only.` }
     ]);
-    const detectedSubject = detectSubjectFromText(detectResult.response.text());
-    // Use detected subject unless it's Other (fallback to current subject)
-    const activeSubject = detectedSubject !== 'Other' ? detectedSubject : subject;
+    const detected = detectSubjectFromText(detectResult.response.text());
+    if (detected && detected !== 'Other') activeSubject = detected;
     console.log(` -> Chat subject: ${activeSubject} (was: ${subject})`);
 
     const persona = PERSONAS[activeSubject] || PERSONAS.Other;
 
     const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
-      systemInstruction: `${persona}
+      systemInstruction: `## RESPONSE FORMAT RULES — OVERRIDE YOUR PERSONA STYLE
 
+Classify the question, then respond EXACTLY as shown:
+
+━━━ SIMPLE: basic fact or trivial question (e.g. "what is 1+1", "what is gravity", "what year was X") ━━━
+ONE sentence answer. ONE sentence context. STOP. No follow-up question.
+EXAMPLE for "what is 1+1": 1 + 1 = 2. Combining one unit with another gives a total of two.
+NO headers. NO paragraphs. NO enthusiasm. NO 🤔 question. 2 sentences MAX.
+
+━━━ MEDIUM: explain how/why, concept questions, diagrams ━━━
+## 🧠 [Topic]
+2–3 paragraphs with **bold key terms**.
+
+━━━ COMPLEX: solve, calculate, prove, derive, multi-step ━━━
+## 🧠 Solution
 ---
-You are tutoring a student. Format ALL responses like this:
-
-For explanations or new concepts:
-## 🧠 [Topic Name]
-[Explanation]
-**Key idea:** [insight]
-
-For step-by-step solutions:
----
-### Step N: [Step Name]
-[What we do and why]
+### Step [N]: [Name]
+[Explanation paragraph]
 💡 **Key idea:** [insight]
-[Working]
+$$[working]$$
 **Result:** [outcome]
 ---
+## ✅ Final Answer
 
-For final answers: use ## ✅ Final Answer with the answer clearly stated.
-Always end with one ## 🤔 Think About This question.
-Use LaTeX for equations, syntax-highlighted code blocks for code.
-Never give the answer before showing the full working.`,
+LaTeX for math ($x$ inline, $$x$$ block). Code blocks for code.
+
+---
+YOUR PERSONA (use this voice, obey format rules above):
+${persona}`,
     });
 
     const chat = model.startChat({
       history: history.map(h => ({ role: h.role, parts: [{ text: h.content }] })),
     });
 
-    // Send detected subject to frontend so badge updates
-    if (activeSubject !== subject) {
-      sseWrite(res, 'subject', { subject: activeSubject });
-    }
+    // Always send subject first so frontend uses correct persona name before streaming
+    sseWrite(res, 'subject', { subject: activeSubject });
 
     const streamResult = await chat.sendMessageStream(message);
 
