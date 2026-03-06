@@ -62,11 +62,26 @@
     </button>
 
     <!-- LEFT: Camera sidebar -->
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar" data-mode="analyze">
 
-      <div class="sidebar-header">
-        <span class="section-label">Camera</span>
-        <span class="frame-counter">Frame <em id="frameNum">0</em></span>
+      <!-- ── Mode pill toggle ── -->
+      <div class="mode-toggle-wrap">
+        <div class="mode-pill" id="modePill">
+          <button class="mode-pill-btn active" id="modeAnalyzeBtn" onclick="setMode('analyze')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M2 8.5C2 7.4 2.9 6.5 4 6.5h1.5L7 4.5h10l1.5 2H20c1.1 0 2 .9 2 2v11c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V8.5z"/>
+            </svg>
+            Analyze
+          </button>
+          <button class="mode-pill-btn" id="modeLiveBtn" onclick="setMode('live')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/>
+            </svg>
+            Live Tutor
+          </button>
+        </div>
+        <!-- frame counter only shown in analyze mode -->
+        <span class="frame-counter" id="frameCounterWrap">Frame <em id="frameNum">0</em></span>
       </div>
 
       <!-- 16:9 locked viewport -->
@@ -80,7 +95,15 @@
               <path d="M2 8.5C2 7.4 2.9 6.5 4 6.5h1.5L7 4.5h10l1.5 2H20c1.1 0 2 .9 2 2v11c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V8.5z"/>
             </svg>
           </div>
-          <p>Camera inactive</p>
+          <p id="camIdleText">Camera inactive</p>
+        </div>
+
+        <!-- Live tutor overlay — shown when live session is active -->
+        <div class="live-overlay" id="liveOverlay">
+          <div class="live-overlay-pip">
+            <div class="live-overlay-dot"></div>
+            <span>Live</span>
+          </div>
         </div>
 
         <div class="cam-scan" id="camScan"></div>
@@ -90,7 +113,7 @@
         </div>
       </div>
 
-      <!-- Last captured frame thumbnail -->
+      <!-- Last captured frame thumbnail (analyze mode only) -->
       <div class="cam-thumb-wrap" id="camThumbWrap">
         <img class="cam-thumb" id="camThumb" src="" alt="Last frame" />
         <div class="cam-thumb-meta">
@@ -99,19 +122,34 @@
         </div>
       </div>
 
-      <!-- Nudge shown when live but not yet analyzed -->
+      <!-- Nudge shown when live but not yet analyzed (analyze mode only) -->
       <div class="cam-nudge" id="camNudge">
         <div class="nudge-dot"></div>
         <p>Camera live — hit <strong>Analyze</strong><span class="space-hint"> or press <strong>Space</strong></span></p>
       </div>
 
-      <!-- Controls -->
-      <div class="controls">
+      <!-- ── Analyze mode controls ── -->
+      <div class="controls" id="analyzeControls">
         <div class="controls-row">
           <button class="btn" id="btnStart" onclick="startCamera()">Start</button>
           <button class="btn" id="btnStop"  onclick="stopCamera()" disabled>Stop</button>
         </div>
         <button class="btn btn-primary" id="btnAnalyze" onclick="analyzeFrame()" disabled>Analyze</button>
+      </div>
+
+      <!-- ── Live tutor mode controls ── -->
+      <div class="controls live-controls" id="liveControls">
+        <div class="live-status-bar" id="liveStatusBar">
+          <div class="live-status-dot" id="liveStatusDot"></div>
+          <span id="liveStatusLabel">Ready to connect</span>
+        </div>
+        <button class="btn btn-live" id="btnLiveSession" onclick="toggleVoice()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/>
+          </svg>
+          Start Session
+        </button>
+        <div class="live-hint">Camera streams automatically during a live session</div>
       </div>
 
     </aside>
@@ -148,12 +186,6 @@
               <path d="M5 10a7 7 0 0 0 14 0"/>
               <line x1="12" y1="19" x2="12" y2="22"/>
               <line x1="8"  y1="22" x2="16" y2="22"/>
-            </svg>
-          </button>
-          <button id="btnCam" title="Share camera with AI" onclick="toggleLiveCamera()">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M23 7l-7 5 7 5V7z"/>
-              <rect x="1" y="5" width="15" height="14" rx="2"/>
             </svg>
           </button>
           <textarea id="chatInput" placeholder="Ask a follow-up question…" rows="1"></textarea>

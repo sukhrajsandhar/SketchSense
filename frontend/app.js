@@ -5,13 +5,61 @@ import { initTheme, toggleSidebar }               from './ui.js';
 import { startCamera, stopCamera, analyzeFrame }  from './camera.js';
 import { sendChat, clearAll }                     from './messages.js';
 import { initSubjectOverride, overrideSubject }   from './subject.js';
-import { toggleVoice, toggleTTS, stopSpeaking, setVolume, toggleLiveCamera } from './voice.js';
+import { toggleVoice, toggleTTS, stopSpeaking, setVolume, startLiveWithCamera, stopLiveSession } from './voice.js';
+import { state } from './state.js';
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 marked.setOptions({ breaks: true, gfm: true });
 initTheme();
 initSubjectOverride();   // inject subject dropdown into header
+
+// ── Mode switching ────────────────────────────────────────────────────────────
+
+let currentMode = 'analyze';
+
+window.setMode = async function(mode) {
+  if (mode === currentMode) return;
+  currentMode = mode;
+
+  const sidebar          = document.getElementById('sidebar');
+  const analyzeControls  = document.getElementById('analyzeControls');
+  const liveControls     = document.getElementById('liveControls');
+  const modeAnalyzeBtn   = document.getElementById('modeAnalyzeBtn');
+  const modeLiveBtn      = document.getElementById('modeLiveBtn');
+  const frameCounterWrap = document.getElementById('frameCounterWrap');
+  const camThumbWrap     = document.getElementById('camThumbWrap');
+  const camNudge         = document.getElementById('camNudge');
+  const pipWrap          = document.getElementById('pipWrap');
+
+  if (mode === 'live') {
+    sidebar.dataset.mode = 'live';
+    modeAnalyzeBtn.classList.remove('active');
+    modeLiveBtn.classList.add('active');
+    analyzeControls.style.display  = 'none';
+    liveControls.style.display     = 'flex';
+    frameCounterWrap.style.display = 'none';
+    camThumbWrap.style.display     = 'none';
+    camNudge.classList.remove('visible');
+    if (pipWrap) pipWrap.classList.remove('active'); // hide PiP, video is in sidebar now
+
+    // Auto-start camera if not already running
+    if (!state.stream) await startCamera();
+
+  } else {
+    // Switching back to analyze — stop live session if running
+    stopLiveSession();
+
+    sidebar.dataset.mode = 'analyze';
+    modeAnalyzeBtn.classList.add('active');
+    modeLiveBtn.classList.remove('active');
+    analyzeControls.style.display  = 'flex';
+    liveControls.style.display     = 'none';
+    frameCounterWrap.style.display = '';
+    // Show nudge again if camera is running
+    if (state.stream) camNudge.classList.add('visible');
+  }
+};
 
 // ── Expose globals for inline HTML onclick / oninput handlers ─────────────────
 
@@ -26,7 +74,6 @@ window.toggleVoice      = toggleVoice;
 window.toggleTTS        = toggleTTS;
 window.stopSpeaking     = stopSpeaking;
 window.setVolume        = setVolume;
-window.toggleLiveCamera = toggleLiveCamera;
 
 // ── Mobile tab switching ──────────────────────────────────────────────────────
 

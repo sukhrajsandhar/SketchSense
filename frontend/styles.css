@@ -1970,3 +1970,226 @@ html[data-theme="light"]       .theme-icon.sun  { color: var(--text-mid); }
 .msg-bubble .katex {
   font-size: 1em;
 }
+
+/* ─── MODE PILL TOGGLE ────────────────────────────────────────── */
+
+.mode-toggle-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 8px;
+  transition: border-color 0.35s;
+}
+
+.mode-pill {
+  display: flex;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.mode-pill-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s;
+  white-space: nowrap;
+}
+
+.mode-pill-btn svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.mode-pill-btn:hover:not(.active) {
+  color: var(--text-mid);
+  background: var(--surface-hover);
+}
+
+.mode-pill-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+
+.mode-pill-btn.active svg {
+  opacity: 1;
+}
+
+/* Active live button gets green tint */
+#modeLiveBtn.active {
+  color: var(--pip-live);
+}
+
+#modeLiveBtn.active svg {
+  stroke: var(--pip-live);
+}
+
+/* ─── LIVE OVERLAY ON VIDEO ───────────────────────────────────── */
+
+.live-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 10px;
+}
+
+.live-overlay.active {
+  opacity: 1;
+}
+
+.live-overlay-pip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(0,0,0,0.55);
+  backdrop-filter: blur(6px);
+  padding: 4px 9px;
+  border-radius: 20px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--pip-live);
+}
+
+.live-overlay-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pip-live);
+  animation: pipBlink 1s ease infinite;
+}
+
+/* ─── LIVE CONTROLS ───────────────────────────────────────────── */
+
+.live-controls {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  flex-shrink: 0;
+}
+
+.live-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 10.5px;
+  color: var(--text-mid);
+  letter-spacing: 0.5px;
+  transition: border-color 0.35s, background 0.35s;
+}
+
+.live-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+
+.live-status-dot.active {
+  background: var(--pip-live);
+  box-shadow: 0 0 0 3px rgba(58,170,102,0.2);
+  animation: pipBlink 1.4s ease infinite;
+}
+
+.live-status-dot.connecting {
+  background: var(--pip-busy);
+  animation: pipBlink 0.5s ease infinite;
+}
+
+.btn-live {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 42px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-hi);
+  color: var(--text-mid);
+  font-family: 'Geist Mono', monospace;
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  width: 100%;
+}
+
+.btn-live svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.btn-live:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pip-live) 12%, var(--surface));
+  border-color: var(--pip-live);
+  color: var(--pip-live);
+}
+
+.btn-live.btn-live-active {
+  background: color-mix(in srgb, #e05555 10%, var(--surface));
+  border-color: #e05555;
+  color: #e05555;
+}
+
+.btn-live.btn-live-active:hover {
+  background: color-mix(in srgb, #e05555 18%, var(--surface));
+  border-color: #e05555;
+  color: #e05555;
+}
+
+.btn-live:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.live-hint {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  text-align: center;
+  letter-spacing: 0.3px;
+  line-height: 1.5;
+  opacity: 0.7;
+  padding: 0 4px;
+}
+
+/* ─── SIDEBAR MODE STATES ─────────────────────────────────────── */
+
+/* In live mode, hide the cam-thumb-wrap */
+.sidebar[data-mode="live"] .cam-thumb-wrap { display: none !important; }
+.sidebar[data-mode="live"] .cam-nudge      { display: none !important; }
+.sidebar[data-mode="live"] #analyzeControls { display: none !important; }
+.sidebar[data-mode="analyze"] #liveControls { display: none !important; }
+

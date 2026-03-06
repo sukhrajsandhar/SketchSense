@@ -98,6 +98,24 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', key: KEY ? `${KEY.slice(0,8)}...` : 'MISSING' });
 });
 
+// ── POST /detect-subject  (lightweight — no full analysis) ───────────────────
+// Body: { message?: string }  →  Returns: { subject: string }
+
+app.post('/detect-subject', async (req, res) => {
+  const { message } = req.body;
+  if (!message) return res.status(400).json({ error: 'Missing message' });
+  try {
+    const model  = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const result = await model.generateContent([{ text: detectSubjectFromMessage(message) }]);
+    const subject = detectSubjectFromText(result.response.text());
+    console.log(`[detect-subject] "${message.slice(0,40)}" → ${subject}`);
+    res.json({ subject });
+  } catch (err) {
+    console.error('detect-subject error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /analyze  (streaming SSE) ───────────────────────────────────────────
 // Events: subject { subject } | chunk { text } | done { observation, subject } | error { error }
 
@@ -263,6 +281,7 @@ wss.on('connection', (browserWs) => {
       if (msg.type === 'setup') {
         subject = msg.subject || 'Other';
         const persona = PERSONAS[subject] || PERSONAS.Other;
+        const isFirstSession = msg.isFirstSession !== false; // default true
 
         const setupPayload = {
           setup: {
@@ -276,7 +295,7 @@ wss.on('connection', (browserWs) => {
             output_audio_transcription: {},
             input_audio_transcription:  {},
             system_instruction: {
-              parts: [{ text: liveVoiceSystemPrompt(persona) }],
+              parts: [{ text: liveVoiceSystemPrompt(persona, isFirstSession) }],
             },
           },
         };
@@ -307,6 +326,28 @@ wss.on('connection', (browserWs) => {
       if (msg.type === 'video') {
         geminiWs.readyState === WebSocket.OPEN && geminiWs.send(JSON.stringify({
           realtime_input: { media_chunks: [{ mime_type: 'image/jpeg', data: msg.data }] },
+        }));
+        return;
+      }
+
+      // { type: 'text', text } — send a text prompt to Gemini (e.g. greeting trigger)
+      if (msg.type === 'text') {
+        geminiWs.readyState === WebSocket.OPEN && geminiWs.send(JSON.stringify({
+          client_content: {
+            turns: [{ role: 'user', parts: [{ text: msg.text }] }],
+            turn_complete: true,
+          },
+        }));
+        return;
+      }
+
+      // { type: 'text', text } — inject a text prompt (e.g. greeting trigger)
+      if (msg.type === 'text') {
+        geminiWs.readyState === WebSocket.OPEN && geminiWs.send(JSON.stringify({
+          client_content: {
+            turns: [{ role: 'user', parts: [{ text: msg.text }] }],
+            turn_complete: true,
+          },
         }));
         return;
       }

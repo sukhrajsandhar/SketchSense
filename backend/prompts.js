@@ -115,7 +115,11 @@ export function imageGenPrompt(subject, userPrompt) {
  * System instruction for the Gemini Live API voice session.
  * Injected with the subject persona.
  */
-export function liveVoiceSystemPrompt(persona) {
+export function liveVoiceSystemPrompt(persona, isFirstSession = true) {
+  const greeting = isFirstSession
+    ? `- When the session starts, warmly greet the student and ask: "What subject are we working on today?" — wait for their answer before doing anything else.`
+    : `- The student has already told you the subject. Continue tutoring without asking again.`;
+
   return `${persona}
 
 VOICE MODE RULES — you are speaking out loud, not writing:
@@ -128,7 +132,11 @@ VOICE MODE RULES — you are speaking out loud, not writing:
 - If you need to reference an equation, describe it in words
 - Be warm and encouraging — celebrate when the student gets something right
 - If you don't understand what was said, ask them to repeat it
-- You may also receive live video frames from the student's camera. If you can see their work, notebook, screen or whiteboard, comment on it naturally — "I can see you've written..." or "Looking at what you have there..."`;
+- You may also receive live video frames from the student's camera. If you can see their work, notebook, screen or whiteboard, comment on it naturally — "I can see you've written..." or "Looking at what you have there..."
+${greeting}
+
+SUBJECT SWITCHING:
+- If the student says something like "switch to history", "change to math", "let's do physics now" — acknowledge the switch warmly: "Sure, switching to [subject] now!" and continue as that subject's tutor.`;
 }
 
 // ── Live document generation (voice → written doc) ────────────────────────────
