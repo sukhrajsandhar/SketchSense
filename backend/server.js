@@ -12,12 +12,15 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { PERSONAS }             from './personas.js';
 import {
   DETECT_SUBJECT_FROM_IMAGE,
+  DETECT_COMPLEXITY_FROM_IMAGE,
   detectSubjectFromMessage,
+  detectComplexityFromMessage,
   analyzePrompt,
   chatSystemPrompt,
   imageGenPrompt,
   liveVoiceSystemPrompt,
   liveDocPrompt,
+  voiceReformatPrompt,
 } from './prompts.js';
 
 dotenv.config();
@@ -79,6 +82,13 @@ function detectSubjectFromText(raw) {
   return subject;
 }
 
+const COMPLEXITY_MAP = { 'beginner': 'beginner', 'intermediate': 'intermediate', 'advanced': 'advanced' };
+
+function detectComplexityFromText(raw) {
+  const firstWord = raw.trim().split(/[\n\r\s,\.;:]+/)[0].toLowerCase();
+  return COMPLEXITY_MAP[firstWord] || 'intermediate';
+}
+
 // ── SSE helper ────────────────────────────────────────────────────────────────
 
 function sseWrite(res, event, data) {
@@ -129,22 +139,40 @@ app.post('/analyze', async (req, res) => {
     console.log(`[${new Date().toISOString()}] Analyzing frame (streaming)…`);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-    // Step 1: Detect subject
+    // Step 1: Detect subject and complexity in parallel
     let subject = subjectOverride || null;
+    let complexity = 'intermediate';
+
     if (!subject) {
-      const detectResult = await model.generateContent([
-        { inlineData: { mimeType: 'image/jpeg', data: image } },
-        { text: DETECT_SUBJECT_FROM_IMAGE },
+      const [detectResult, complexityResult] = await Promise.all([
+        model.generateContent([
+          { inlineData: { mimeType: 'image/jpeg', data: image } },
+          { text: DETECT_SUBJECT_FROM_IMAGE },
+        ]),
+        model.generateContent([
+          { inlineData: { mimeType: 'image/jpeg', data: image } },
+          { text: DETECT_COMPLEXITY_FROM_IMAGE },
+        ]),
       ]);
-      subject = detectSubjectFromText(detectResult.response.text());
+      subject    = detectSubjectFromText(detectResult.response.text());
+      complexity = detectComplexityFromText(complexityResult.response.text());
+    } else {
+      // Subject overridden but still detect complexity
+      const complexityResult = await model.generateContent([
+        { inlineData: { mimeType: 'image/jpeg', data: image } },
+        { text: DETECT_COMPLEXITY_FROM_IMAGE },
+      ]);
+      complexity = detectComplexityFromText(complexityResult.response.text());
     }
+
+    console.log(` -> subject=${subject}, complexity=${complexity}`);
     sseWrite(res, 'subject', { subject });
 
     // Step 2: Stream full analysis
     const persona = PERSONAS[subject] || PERSONAS.Other;
     const streamResult = await model.generateContentStream([
       { inlineData: { mimeType: 'image/jpeg', data: image } },
-      { text: analyzePrompt(persona) },
+      { text: analyzePrompt(persona, complexity) },
     ]);
 
     let fullText = '';
@@ -168,7 +196,7 @@ app.post('/analyze', async (req, res) => {
 // Events: subject { subject } | chunk { text } | done { reply } | error { error }
 
 app.post('/chat', async (req, res) => {
-  const { message, history = [], subject = 'Other' } = req.body;
+  const { message, history = [], subject = 'Other', voiceMode = false } = req.body;
   if (!message) return res.status(400).json({ error: 'Missing message' });
 
   sseSetup(res);
@@ -176,19 +204,24 @@ app.post('/chat', async (req, res) => {
   try {
     console.log(`[${new Date().toISOString()}] Chat [${subject}]: "${message}"`);
 
-    // Re-detect subject from message
+    // Re-detect subject and complexity from message + history
     const detectModel  = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const detectResult = await detectModel.generateContent([
-      { text: detectSubjectFromMessage(message) },
+    const [detectResult, complexityResult] = await Promise.all([
+      detectModel.generateContent([{ text: detectSubjectFromMessage(message) }]),
+      detectModel.generateContent([{ text: detectComplexityFromMessage(message, history) }]),
     ]);
-    const detected     = detectSubjectFromText(detectResult.response.text());
+    const detected      = detectSubjectFromText(detectResult.response.text());
+    const complexity    = detectComplexityFromText(complexityResult.response.text());
     const activeSubject = detected !== 'Other' ? detected : subject;
-    console.log(` -> Chat subject: ${activeSubject} (was: ${subject})`);
+    console.log(` -> Chat subject: ${activeSubject} (was: ${subject}), complexity: ${complexity}`);
 
-    const persona = PERSONAS[activeSubject] || PERSONAS.Other;
-    const model   = genAI.getGenerativeModel({
+    const persona   = PERSONAS[activeSubject] || PERSONAS.Other;
+    const sysPrompt = voiceMode
+      ? voiceReformatPrompt(persona, complexity)
+      : chatSystemPrompt(persona, complexity);
+    const model = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
-      systemInstruction: chatSystemPrompt(persona),
+      systemInstruction: sysPrompt,
     });
 
     const chat = model.startChat({

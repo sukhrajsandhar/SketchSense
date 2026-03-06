@@ -7,7 +7,7 @@ import { showToast }       from './ui.js';
 import { DOC_TRIGGERS, liveDocPrompt, PERSONA_NAMES } from './prompts.js';
 import {
   clearEmpty, scrollMsgs,
-  appendStreamingAI, updateStreamingBubble, finaliseStreamingBubble,
+  appendStreamingAI, updateStreamingBubble, updateStreamingBubbleMarkdown, finaliseStreamingBubble,
   appendSysLive,
 } from './messages.js';
 
@@ -61,6 +61,17 @@ const VAD_THRESH     = 0.015;
 const VAD_FRAMES_REQ = 4;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// Join transcript chunks with a space only when needed.
+// Gemini Live sends chunks that sometimes have leading/trailing spaces and
+// sometimes don't — naively concatenating causes "wordsmashed" or "word  doubled".
+function joinChunk(acc, chunk) {
+  if (!acc) return chunk;
+  const needsSpace = acc.length > 0
+    && !/\s$/.test(acc)        // acc doesn't end with whitespace
+    && !/^[\s.,!?;:)]/.test(chunk); // chunk doesn't start with space or punctuation
+  return acc + (needsSpace ? ' ' : '') + chunk;
+}
 
 function voiceTutorName() {
   return PERSONA_NAMES[sessionSubject] || 'Sam';
@@ -279,11 +290,11 @@ function handleMsg(msg) {
       break;
 
     case 'transcript_out':
-      if (!skipTurn && msg.text) { aiAccum += msg.text + ' '; updateVoiceAIBubble(aiAccum); }
+      if (!skipTurn && msg.text) { aiAccum = joinChunk(aiAccum, msg.text); updateVoiceAIBubble(aiAccum); }
       break;
 
     case 'transcript_in':
-      if (!skipTurn && msg.text) { userAccum += msg.text + ' '; updateVoiceUserBubble(userAccum); }
+      if (!skipTurn && msg.text) { userAccum = joinChunk(userAccum, msg.text); updateVoiceUserBubble(userAccum); }
       break;
 
     case 'turn_complete':
@@ -300,13 +311,14 @@ function handleMsg(msg) {
       finaliseVoiceUserBubble();
 
       if (spokenText && userText) {
-        // User asked something — discard plain bubble, reformat via /chat for structured output
-        if (currentAIBubble) { currentAIBubble.remove(); currentAIBubble = null; }
+        // User asked something — keep the live bubble visible while reformat streams in,
+        // then replace it. Don't remove it upfront — that causes the flash of empty screen.
         aiAccum = '';
         const historySnapshot = state.conversationHistory.slice(-8);
         state.conversationHistory.push({ role: 'user',  content: userText });
         state.conversationHistory.push({ role: 'model', content: spokenText });
-        reformatVoiceResponse(userText, historySnapshot);
+        reformatVoiceResponse(userText, historySnapshot, currentAIBubble);
+        currentAIBubble = null; // ownership transferred to reformatVoiceResponse
       } else {
         finaliseVoiceAIBubble();
       }
@@ -407,7 +419,8 @@ function updateVoiceAIBubble(text) {
   if (!currentAIBubble) {
     currentAIBubble = appendStreamingAI(voiceTutorName(), '🎙');
   }
-  updateStreamingBubble(currentAIBubble, text);
+  // Render markdown as it arrives so the bubble looks good while the AI speaks
+  updateStreamingBubbleMarkdown(currentAIBubble, text);
 }
 
 function finaliseVoiceAIBubble() {
@@ -426,11 +439,15 @@ function finaliseVoiceAIBubble() {
 // ── Reformat plain voice transcript into structured markdown ─────────────────
 // Called after turn_complete — streams a formatted version from /chat endpoint.
 
-async function reformatVoiceResponse(userQuestion, historySnapshot) {
+async function reformatVoiceResponse(userQuestion, historySnapshot, existingBubble = null) {
   const subject = sessionSubject;
   const name    = voiceTutorName();
 
-  const el = appendStreamingAI(name, '🎙');
+  // Reuse the existing live bubble so there's no flash of empty screen.
+  // If none was passed (e.g. fallback call), create a fresh one.
+  const el = existingBubble || appendStreamingAI(name, '🎙');
+  // Mark it as still streaming so the cursor stays visible
+  el.classList.add('streaming');
   let fullReply = '';
 
   try {
@@ -457,6 +474,7 @@ async function reformatVoiceResponse(userQuestion, historySnapshot) {
         message: userQuestion,
         history: safeHistory,
         subject,
+        voiceMode: true,
       }),
     });
     if (!res.ok) throw new Error('Server error ' + res.status);
@@ -483,7 +501,7 @@ async function reformatVoiceResponse(userQuestion, historySnapshot) {
           // subject re-detection — ignore, we already know the subject
         } else if (ev.text !== undefined) {
           fullReply += ev.text;
-          updateStreamingBubble(el, fullReply);
+          updateStreamingBubbleMarkdown(el, fullReply);
         } else if (ev.reply !== undefined || ev.observation !== undefined) {
           // done signal from server
         } else if (ev.error) {
@@ -498,7 +516,14 @@ async function reformatVoiceResponse(userQuestion, historySnapshot) {
   }
 
   if (!fullReply.trim()) {
-    el.remove();
+    // Reformat failed — fall back to showing the plain spoken transcript
+    // rather than wiping the bubble entirely
+    const fallback = state.conversationHistory.slice(-1)[0]?.content || '';
+    if (fallback) {
+      finaliseStreamingBubble(el, fallback, { skipExport: true, plainText: true });
+    } else {
+      el.remove();
+    }
     return;
   }
 

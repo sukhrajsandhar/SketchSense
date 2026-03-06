@@ -96,6 +96,48 @@ export function updateStreamingBubble(el, text) {
   scrollMsgs();
 }
 
+// ── SHARED: Update bubble with live markdown rendering ────────────────────────
+// Used by voice transcripts so text looks formatted as the AI speaks,
+// not as a raw <pre> block. Slightly heavier than updateStreamingBubble
+// but voice turns are short so it's fine.
+
+// ── Live markdown rendering for voice bubbles ────────────────────────────────
+// The key problem: if we call marked.parse(text) + renderMath on every chunk,
+// KaTeX mutates the DOM (wraps $...$ in spans), then the NEXT chunk calls
+// marked.parse(text) again on the original raw text — doubling everything.
+//
+// Fix: always re-render from raw text, but ONLY run KaTeX on a throttled timer.
+// Between KaTeX runs the bubble shows plain marked output (no rendered math),
+// but words and markdown appear immediately. KaTeX fires at most every 400ms
+// and always runs once more after the final chunk via finaliseStreamingBubble.
+
+const _mathRenderTimers = new WeakMap();
+
+export function updateStreamingBubbleMarkdown(el, text) {
+  const bubble = el.querySelector('.msg-bubble');
+  if (!bubble) return;
+
+  // Always re-render markdown from raw text — safe because marked.parse is
+  // idempotent on raw markdown (it never sees its own HTML output here).
+  bubble.innerHTML = marked.parse(text) + '<span class="stream-cursor"></span>';
+  scrollMsgs();
+
+  // Throttled KaTeX pass — don't run on every chunk or it will see its own
+  // rendered output and double-render. We clear+reset the timer each chunk
+  // so it fires 400ms after the LAST chunk in a burst.
+  const existing = _mathRenderTimers.get(el);
+  if (existing) clearTimeout(existing);
+  _mathRenderTimers.set(el, setTimeout(() => {
+    _mathRenderTimers.delete(el);
+    const b = el.querySelector('.msg-bubble');
+    if (!b) return;
+    // Re-parse from raw text first so KaTeX sees clean markdown, not its own output
+    b.innerHTML = marked.parse(text) + '<span class="stream-cursor"></span>';
+    renderMath(b);
+    b.querySelectorAll('pre code:not(.hljs)').forEach(c => hljs.highlightElement(c));
+  }, 400));
+}
+
 // ── SHARED: Finalise a streaming bubble ───────────────────────────────────────
 // Renders markdown + math + code, adds copy button + export dropdown.
 // Options:
