@@ -846,27 +846,26 @@ html[data-theme="light"]       .theme-icon.sun  { color: var(--text-mid); }
 /* Copy button — always visible, tap friendly */
 .copy-btn {
   align-self: flex-start;
-  background: none;
-  border: none;
+  background: transparent;
+  border: 1px solid var(--border);
   color: var(--text-dim);
   font-family: 'Geist Mono', monospace;
   font-size: 9.5px;
-  letter-spacing: 0.8px;
+  letter-spacing: 1px;
   text-transform: uppercase;
-  padding: 3px 6px;
+  padding: 5px 11px;
   cursor: pointer;
-  opacity: 0.7;
-  transition: color 0.15s, opacity 0.15s;
+  opacity: 0.5;
+  transition: all 0.15s;
   border-radius: 2px;
-  line-height: 1;
-  outline: none;
+  min-height: 28px; /* tap target */
 }
 
-.msg.ai:hover .copy-btn { opacity: 0.7; }
+.msg.ai:hover .copy-btn { opacity: 1; }
 .copy-btn:hover,
-.copy-btn:focus { background: none; border: none; color: var(--text); opacity: 1; outline: none; }
+.copy-btn:focus { background: var(--surface); color: var(--text); border-color: var(--text-mid); opacity: 1; outline: none; }
 .copy-btn:active { transform: scale(0.97); }
-.copy-btn.copied { color: var(--pip-live); opacity: 1; }
+.copy-btn.copied { color: var(--pip-live); border-color: var(--pip-live); opacity: 1; }
 
 /* Thinking dots */
 .thinking-dots span {
@@ -1011,6 +1010,209 @@ html[data-theme="light"]       .theme-icon.sun  { color: var(--text-mid); }
 
 #btnSend:hover:not(:disabled) { opacity: 0.72; }
 #btnSend:disabled { opacity: 0.18; cursor: not-allowed; }
+
+/* ── Mic & TTS voice buttons ─────────────────────────────────── */
+
+#btnMic, #btnTTS {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+  padding: 0;
+}
+
+#btnMic svg, #btnTTS svg {
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+}
+
+#btnMic:hover { color: var(--text); }
+
+/* TTS — green when ON, dim + centred slash when OFF */
+#btnTTS {
+  border-right: none;
+  border-left: 1px solid var(--border-hi);
+  order: 1;
+  color: var(--pip-live);
+  position: relative;
+  overflow: hidden;
+}
+#btnTTS:hover { opacity: 0.8; }
+
+#btnTTS.tts-off {
+  color: var(--text-dim);
+  opacity: 0.55;
+}
+/* Perfectly centred diagonal slash — uses inset pseudo-element */
+#btnTTS.tts-off::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 2px;
+  background: var(--text-dim);
+  border-radius: 1px;
+  transform: translate(-50%, -50%) rotate(-45deg);
+  pointer-events: none;
+}
+
+/* Mic live = pulsing red */
+#btnMic.live {
+  color: #e74c3c;
+  animation: micPulse 1.2s ease-in-out infinite;
+}
+#btnMic.processing { color: var(--text-dim); opacity: 0.5; cursor: not-allowed; }
+
+@keyframes micPulse {
+  0%, 100% { opacity: 1;   transform: scale(1);    }
+  50%       { opacity: 0.6; transform: scale(0.88); }
+}
+
+/* ── Volume slider ────────────────────────────────────────────── */
+
+.volume-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-right: 1px solid var(--border-hi);
+  flex-shrink: 0;
+  height: 42px;
+}
+
+.volume-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  display: block;
+}
+
+#volumeSlider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 64px;
+  height: 3px;
+  background: var(--border-hi);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+  display: block;
+  margin: 0;
+  padding: 0;
+  vertical-align: middle;
+}
+#volumeSlider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--pip-live);
+  cursor: pointer;
+  transition: transform 0.15s;
+  margin-top: 0;
+}
+#volumeSlider::-webkit-slider-thumb:hover { transform: scale(1.3); }
+#volumeSlider::-moz-range-thumb {
+  width: 13px; height: 13px;
+  border: none; border-radius: 50%;
+  background: var(--pip-live); cursor: pointer;
+}
+#volumeSlider::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-hi);
+}
+
+/* ── Camera toggle button (live video) ────────────────────────── */
+
+#btnCam {
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--border-hi);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s;
+  padding: 0;
+}
+#btnCam svg { width: 15px; height: 15px; pointer-events: none; }
+#btnCam:hover { color: var(--text); }
+#btnCam.cam-on {
+  color: var(--pip-live);
+  animation: camPulse 2s ease-in-out infinite;
+}
+@keyframes camPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.55; }
+}
+
+/* ── PiP video overlay ────────────────────────────────────────── */
+
+.pip-wrap {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 10px);
+  right: 24px;
+  width: 180px;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--border-hi);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  background: #000;
+  z-index: 50;
+}
+.pip-wrap.active { display: block; }
+
+#pipVideo {
+  width: 100%;
+  display: block;
+  aspect-ratio: 4/3;
+  object-fit: cover;
+  transform: scaleX(-1);  /* mirror like a selfie */
+}
+
+.pip-label {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #fff;
+  background: var(--pip-live);
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+/* Make chat-input-wrap position:relative so PiP can anchor to it */
+.chat-input-wrap { position: relative; }
+
+.doc-card {
+  border-left: 3px solid var(--pip-live);
+}
+.doc-card .msg-label { color: var(--pip-live); }
+.doc-body { margin-top: 4px; }
+.doc-body h2, .doc-body h3 { font-size: 13px; font-weight: 600; margin: 10px 0 4px; color: var(--text); }
+.doc-body ul, .doc-body ol { padding-left: 18px; margin: 4px 0 8px; color: var(--text-mid); font-size: 12.5px; line-height: 1.7; }
+.doc-body li { margin-bottom: 2px; }
 
 /* ─── SCROLLBAR (webkit) ──────────────────────────────────────── */
 
@@ -1513,10 +1715,7 @@ html[data-theme="light"]       .theme-icon.sun  { color: var(--text-mid); }
 .msg-bubble > h2:first-child,
 .msg-bubble > h3:first-child {
   margin-top: 0;
-}
-
-/* ════════════════════════════════════════════════════════════════════════════
-   AI MESSAGE REDESIGN — clean editorial style
+}   AI MESSAGE REDESIGN — clean editorial style
    ════════════════════════════════════════════════════════════════════════════ */
 
 /* Base bubble reset */

@@ -1,25 +1,42 @@
 // ── server.js ─────────────────────────────────────────────────────────────────
+// Combined SketchSense backend.
+// All prompts live in prompts.js — never hardcode them here.
+
 import express  from 'express';
 import cors     from 'cors';
 import dotenv   from 'dotenv';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { PERSONAS } from './personas.js';
+import { createServer } from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
+
+import { PERSONAS }             from './personas.js';
+import {
+  DETECT_SUBJECT_FROM_IMAGE,
+  detectSubjectFromMessage,
+  analyzePrompt,
+  chatSystemPrompt,
+  imageGenPrompt,
+  liveVoiceSystemPrompt,
+  liveDocPrompt,
+} from './prompts.js';
 
 dotenv.config();
 
-const KEY = process.env.GEMINI_API_KEY;
+const KEY  = process.env.GEMINI_API_KEY;
+const PORT = process.env.PORT || 3001;
+
 console.log('\n=== STARTUP ===');
 console.log('API Key:', KEY ? `${KEY.slice(0,8)}...${KEY.slice(-4)} (len:${KEY.length})` : 'MISSING!');
 console.log('===============\n');
 
 const genAI = new GoogleGenerativeAI(KEY);
 const app   = express();
-const PORT  = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// ── Fuzzy subject matcher ─────────────────────────────────────────────────────
+// ── Subject detection helpers ─────────────────────────────────────────────────
+
 const SUBJECT_MAP = {
   'math':            'Math',
   'mathematics':     'Math',
@@ -54,7 +71,7 @@ const SUBJECT_MAP = {
 
 function detectSubjectFromText(raw) {
   console.log(` -> Raw Gemini detection: "${raw}"`);
-  const firstWord = raw.trim().split(/[\n\r\s,\.;:]+/)[0];
+  const firstWord  = raw.trim().split(/[\n\r\s,\.;:]+/)[0];
   const normalised = firstWord.toLowerCase().replace(/[\s_\-\.]/g, '');
   console.log(` -> Normalised: "${normalised}"`);
   const subject = SUBJECT_MAP[normalised] || 'Other';
@@ -62,102 +79,60 @@ function detectSubjectFromText(raw) {
   return subject;
 }
 
-// ── SSE helper — sends a single event ────────────────────────────────────────
+// ── SSE helper ────────────────────────────────────────────────────────────────
+
 function sseWrite(res, event, data) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-// ── Health ────────────────────────────────────────────────────────────────────
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', key: KEY ? `${KEY.slice(0,8)}...` : 'MISSING' });
-});
-
-// ── POST /analyze  (streaming via SSE) ───────────────────────────────────────
-// Returns a text/event-stream with events:
-//   subject  { subject }          — sent as soon as detection is done
-//   chunk    { text }             — streamed tokens from Gemini
-//   done     { observation }      — full text when complete
-//   error    { error }
-app.post('/analyze', async (req, res) => {
-  const { image, subjectOverride } = req.body;
-  if (!image) return res.status(400).json({ error: 'Missing image' });
-
-  // Set up SSE
+function sseSetup(res) {
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders();
+}
+
+// ── GET /health ───────────────────────────────────────────────────────────────
+
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', key: KEY ? `${KEY.slice(0,8)}...` : 'MISSING' });
+});
+
+// ── POST /analyze  (streaming SSE) ───────────────────────────────────────────
+// Events: subject { subject } | chunk { text } | done { observation, subject } | error { error }
+
+app.post('/analyze', async (req, res) => {
+  const { image, subjectOverride } = req.body;
+  if (!image) return res.status(400).json({ error: 'Missing image' });
+
+  sseSetup(res);
 
   try {
-    console.log(`[${new Date().toISOString()}] Analyzing frame (streaming)...`);
+    console.log(`[${new Date().toISOString()}] Analyzing frame (streaming)…`);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
-    // Step 1: Detect subject (fast, non-streamed)
+    // Step 1: Detect subject
     let subject = subjectOverride || null;
     if (!subject) {
       const detectResult = await model.generateContent([
         { inlineData: { mimeType: 'image/jpeg', data: image } },
-        { text: 'What school subject is shown in this image? Binary numbers = Math. Code = ComputerScience. Choose ONE: Math, Physics, Chemistry, Biology, ComputerScience, History, Literature, Economics, Other. Reply with the single word only, no explanation.' },
+        { text: DETECT_SUBJECT_FROM_IMAGE },
       ]);
       subject = detectSubjectFromText(detectResult.response.text());
     }
-
-    // Send subject immediately so badge updates before streaming starts
     sseWrite(res, 'subject', { subject });
 
-    // Step 2: Stream the full analysis
+    // Step 2: Stream full analysis
     const persona = PERSONAS[subject] || PERSONAS.Other;
     const streamResult = await model.generateContentStream([
       { inlineData: { mimeType: 'image/jpeg', data: image } },
-      {
-        text: `## RESPONSE FORMAT RULES — OVERRIDE YOUR PERSONA STYLE
-
-STEP 1: Output this hidden block first, always:
-<details>
-<summary>📌 What I See</summary>
-[One sentence: what is written or drawn]
-</details>
-
-STEP 2: Classify the content, then respond EXACTLY as shown:
-
-━━━ SIMPLE: basic fact or trivial question (e.g. "what is 1+1", "what is the capital of France") ━━━
-ONE sentence answer. ONE sentence context. STOP. No follow-up question.
-EXAMPLE for "what is 1+1": 1 + 1 = 2. Adding one unit to another gives a total of two.
-NO headers. NO paragraphs. NO 🤔 question. 2 sentences MAX.
-
-━━━ MEDIUM: concept, diagram, or explain/why/how question ━━━
-## 🧠 [Topic]
-2–3 paragraphs with **bold key terms**.
-
-━━━ COMPLEX: equation to solve, proof, multi-step working ━━━
-## 🧠 Solution
----
-### Step [N]: [Name]
-[Explanation paragraph]
-💡 **Key idea:** [insight]
-$$[working]$$
-**Result:** [outcome]
----
-## ✅ Final Answer
-
-RULES:
-- For SIMPLE: 2 sentences max. No headers. No enthusiasm. No follow-up question. STOP after context sentence.
-- LaTeX for math, code blocks for code.
-
----
-YOUR PERSONA (use this voice, obey format rules above):
-${persona}`,
-      },
+      { text: analyzePrompt(persona) },
     ]);
 
-    // Stream chunks to client
     let fullText = '';
     for await (const chunk of streamResult.stream) {
       const text = chunk.text();
-      if (text) {
-        fullText += text;
-        sseWrite(res, 'chunk', { text });
-      }
+      if (text) { fullText += text; sseWrite(res, 'chunk', { text }); }
     }
 
     sseWrite(res, 'done', { observation: fullText, subject });
@@ -171,89 +146,50 @@ ${persona}`,
   }
 });
 
-// ── POST /chat  (streaming via SSE) ──────────────────────────────────────────
-// Returns a text/event-stream with events:
-//   chunk  { text }
-//   done   { reply }
-//   error  { error }
+// ── POST /chat  (streaming SSE) ───────────────────────────────────────────────
+// Events: subject { subject } | chunk { text } | done { reply } | error { error }
+
 app.post('/chat', async (req, res) => {
   const { message, history = [], subject = 'Other' } = req.body;
   if (!message) return res.status(400).json({ error: 'Missing message' });
 
-  // Set up SSE
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.flushHeaders();
+  sseSetup(res);
 
   try {
-    console.log(`[${new Date().toISOString()}] Chat stream [${subject}]: "${message}"`);
+    console.log(`[${new Date().toISOString()}] Chat [${subject}]: "${message}"`);
 
-    // Always detect subject fresh from the latest message
-    let activeSubject = subject;
-    const detectModel = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    // Re-detect subject from message
+    const detectModel  = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
     const detectResult = await detectModel.generateContent([
-      { text: `What school subject is this question about? Judge only this message: "${message}". Choose ONE: Math, Physics, Chemistry, Biology, ComputerScience, History, Literature, Economics, Other. Reply single word only.` }
+      { text: detectSubjectFromMessage(message) },
     ]);
-    const detected = detectSubjectFromText(detectResult.response.text());
-    if (detected && detected !== 'Other') activeSubject = detected;
+    const detected     = detectSubjectFromText(detectResult.response.text());
+    const activeSubject = detected !== 'Other' ? detected : subject;
     console.log(` -> Chat subject: ${activeSubject} (was: ${subject})`);
 
     const persona = PERSONAS[activeSubject] || PERSONAS.Other;
-
-    const model = genAI.getGenerativeModel({
+    const model   = genAI.getGenerativeModel({
       model: 'gemini-2.5-flash',
-      systemInstruction: `## RESPONSE FORMAT RULES — OVERRIDE YOUR PERSONA STYLE
-
-Classify the question, then respond EXACTLY as shown:
-
-━━━ SIMPLE: basic fact or trivial question (e.g. "what is 1+1", "what is gravity", "what year was X") ━━━
-ONE sentence answer. ONE sentence context. STOP. No follow-up question.
-EXAMPLE for "what is 1+1": 1 + 1 = 2. Combining one unit with another gives a total of two.
-NO headers. NO paragraphs. NO enthusiasm. NO 🤔 question. 2 sentences MAX.
-
-━━━ MEDIUM: explain how/why, concept questions, diagrams ━━━
-## 🧠 [Topic]
-2–3 paragraphs with **bold key terms**.
-
-━━━ COMPLEX: solve, calculate, prove, derive, multi-step ━━━
-## 🧠 Solution
----
-### Step [N]: [Name]
-[Explanation paragraph]
-💡 **Key idea:** [insight]
-$$[working]$$
-**Result:** [outcome]
----
-## ✅ Final Answer
-
-LaTeX for math ($x$ inline, $$x$$ block). Code blocks for code.
-
----
-YOUR PERSONA (use this voice, obey format rules above):
-${persona}`,
+      systemInstruction: chatSystemPrompt(persona),
     });
 
     const chat = model.startChat({
       history: history.map(h => ({ role: h.role, parts: [{ text: h.content }] })),
     });
 
-    // Always send subject first so frontend uses correct persona name before streaming
-    sseWrite(res, 'subject', { subject: activeSubject });
+    if (activeSubject !== subject) {
+      sseWrite(res, 'subject', { subject: activeSubject });
+    }
 
     const streamResult = await chat.sendMessageStream(message);
-
     let fullReply = '';
     for await (const chunk of streamResult.stream) {
       const text = chunk.text();
-      if (text) {
-        fullReply += text;
-        sseWrite(res, 'chunk', { text });
-      }
+      if (text) { fullReply += text; sseWrite(res, 'chunk', { text }); }
     }
 
     sseWrite(res, 'done', { reply: fullReply });
-    console.log(` -> chat stream complete. chars=${fullReply.length}`);
+    console.log(` -> chat done. chars=${fullReply.length}`);
     res.end();
 
   } catch (err) {
@@ -263,33 +199,22 @@ ${persona}`,
   }
 });
 
-// ── POST /generate-image  (not streamed — image gen doesn't support it) ───────
+// ── POST /generate-image ──────────────────────────────────────────────────────
+
 app.post('/generate-image', async (req, res) => {
   const { prompt, subject = 'Other' } = req.body;
   if (!prompt) return res.status(400).json({ error: 'Missing prompt' });
 
   try {
-    console.log(`[${new Date().toISOString()}] Generating image [${subject}]: "${prompt}"`);
-
-    const subjectHint = {
-      Math:            'mathematical diagram with clean notation and labeled axes',
-      Physics:         'physics diagram with labeled forces, vectors, and units',
-      Chemistry:       'molecular structure or chemical reaction diagram, clearly labeled',
-      Biology:         'biological diagram with labeled parts, anatomical or cellular',
-      ComputerScience: 'flowchart or data structure diagram with clear nodes and edges',
-      History:         'historical timeline or map, clearly labeled with dates',
-      Literature:      'conceptual mind map or thematic diagram',
-      Economics:       'economic graph with labeled axes, curves, and equilibrium points',
-      Other:           'clear, well-labeled educational diagram',
-    }[subject] || 'clear, well-labeled educational diagram';
+    console.log(`[${new Date().toISOString()}] Image gen [${subject}]: "${prompt}"`);
 
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp-image-generation:generateContent?key=${KEY}`,
       {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: `Create a ${subjectHint}: ${prompt}` }] }],
+          contents: [{ role: 'user', parts: [{ text: imageGenPrompt(subject, prompt) }] }],
           generationConfig: { responseModalities: ['TEXT', 'IMAGE'] },
         }),
       }
@@ -301,7 +226,7 @@ app.post('/generate-image', async (req, res) => {
     let imageBase64 = null, mimeType = 'image/png', caption = null;
     for (const part of json.candidates?.[0]?.content?.parts ?? []) {
       if (part.inlineData?.data) { imageBase64 = part.inlineData.data; mimeType = part.inlineData.mimeType || 'image/png'; }
-      else if (part.text) { caption = part.text; }
+      else if (part.text)         { caption = part.text; }
     }
 
     if (!imageBase64) return res.json({ imageBase64: null, caption: caption || 'Could not generate image.' });
@@ -314,11 +239,151 @@ app.post('/generate-image', async (req, res) => {
   }
 });
 
+// ── WebSocket /live — Gemini Live API proxy ───────────────────────────────────
+
+const LIVE_MODEL = 'gemini-2.5-flash-native-audio-preview-12-2025';
+const LIVE_URL   = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${KEY}`;
+
+const httpServer = createServer(app);
+const wss        = new WebSocketServer({ server: httpServer, path: '/live' });
+
+wss.on('connection', (browserWs) => {
+  console.log(`[${new Date().toISOString()}] Live session opened`);
+
+  const geminiWs = new WebSocket(LIVE_URL);
+  let setupSent  = false;
+  let subject    = 'Other';
+
+  // ── Browser → Gemini ──────────────────────────────────────────────────────
+  browserWs.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+
+      // { type: 'setup', subject, history }
+      if (msg.type === 'setup') {
+        subject = msg.subject || 'Other';
+        const persona = PERSONAS[subject] || PERSONAS.Other;
+
+        const setupPayload = {
+          setup: {
+            model: `models/${LIVE_MODEL}`,
+            generation_config: {
+              response_modalities: ['AUDIO'],
+              speech_config: {
+                voice_config: { prebuilt_voice_config: { voice_name: 'Aoede' } },
+              },
+            },
+            output_audio_transcription: {},
+            input_audio_transcription:  {},
+            system_instruction: {
+              parts: [{ text: liveVoiceSystemPrompt(persona) }],
+            },
+          },
+        };
+
+        if (geminiWs.readyState === WebSocket.OPEN) {
+          geminiWs.send(JSON.stringify(setupPayload));
+          setupSent = true;
+        } else {
+          geminiWs.once('open', () => {
+            geminiWs.send(JSON.stringify(setupPayload));
+            setupSent = true;
+          });
+        }
+        return;
+      }
+
+      if (!setupSent) return;
+
+      // { type: 'audio', data, mime }
+      if (msg.type === 'audio') {
+        geminiWs.readyState === WebSocket.OPEN && geminiWs.send(JSON.stringify({
+          realtime_input: { media_chunks: [{ mime_type: msg.mime || 'audio/pcm;rate=16000', data: msg.data }] },
+        }));
+        return;
+      }
+
+      // { type: 'video', data } — base64 JPEG frame from student's camera
+      if (msg.type === 'video') {
+        geminiWs.readyState === WebSocket.OPEN && geminiWs.send(JSON.stringify({
+          realtime_input: { media_chunks: [{ mime_type: 'image/jpeg', data: msg.data }] },
+        }));
+        return;
+      }
+
+      // { type: 'end_turn' }
+      if (msg.type === 'end_turn') {
+        geminiWs.readyState === WebSocket.OPEN && geminiWs.send(JSON.stringify({
+          client_content: { turn_complete: true },
+        }));
+      }
+
+    } catch (e) {
+      console.error('Live: browser parse error', e.message);
+    }
+  });
+
+  // ── Gemini → Browser ──────────────────────────────────────────────────────
+  geminiWs.on('message', (raw) => {
+    try {
+      const msg = JSON.parse(raw.toString());
+
+      if (msg.setupComplete) {
+        browserWs.send(JSON.stringify({ type: 'ready' }));
+        return;
+      }
+
+      const parts = msg.serverContent?.modelTurn?.parts;
+      if (parts) {
+        for (const part of parts) {
+          if (part.inlineData?.data) {
+            browserWs.send(JSON.stringify({ type: 'audio', data: part.inlineData.data, mime: part.inlineData.mimeType || 'audio/pcm;rate=24000' }));
+          }
+          if (part.text) {
+            browserWs.send(JSON.stringify({ type: 'text', text: part.text }));
+          }
+        }
+      }
+
+      const outTranscript = msg.serverContent?.outputTranscription?.text;
+      if (outTranscript) browserWs.send(JSON.stringify({ type: 'transcript_out', text: outTranscript }));
+
+      const inTranscript = msg.serverContent?.inputTranscription?.text;
+      if (inTranscript)  browserWs.send(JSON.stringify({ type: 'transcript_in',  text: inTranscript  }));
+
+      if (msg.serverContent?.turnComplete)  browserWs.send(JSON.stringify({ type: 'turn_complete' }));
+      if (msg.serverContent?.interrupted)   browserWs.send(JSON.stringify({ type: 'interrupted' }));
+
+    } catch (e) {
+      console.error('Live: Gemini parse error', e.message);
+    }
+  });
+
+  geminiWs.on('error', (err) => {
+    console.error('Live: Gemini WS error:', err.message);
+    browserWs.send(JSON.stringify({ type: 'error', error: err.message }));
+  });
+
+  geminiWs.on('close', (code) => {
+    console.log(`[${new Date().toISOString()}] Gemini WS closed: ${code}`);
+    if (browserWs.readyState === WebSocket.OPEN) browserWs.close();
+  });
+
+  browserWs.on('close', () => {
+    console.log(`[${new Date().toISOString()}] Browser disconnected`);
+    if (geminiWs.readyState === WebSocket.OPEN) geminiWs.close();
+  });
+
+  browserWs.on('error', (e) => console.error('Live: browser WS error:', e.message));
+});
+
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, () => {
+
+httpServer.listen(PORT, () => {
   console.log(`🚀 Backend on http://localhost:${PORT}`);
-  console.log(`  GET  /health         - status check`);
-  console.log(`  POST /analyze        - streaming vision analysis`);
-  console.log(`  POST /chat           - streaming chat`);
-  console.log(`  POST /generate-image - image generation\n`);
+  console.log(`  GET  /health         — status check`);
+  console.log(`  POST /analyze        — streaming vision analysis`);
+  console.log(`  POST /chat           — streaming chat`);
+  console.log(`  POST /generate-image — image generation`);
+  console.log(`  WS   /live           — Gemini Live Audio + Video\n`);
 });

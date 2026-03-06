@@ -1,28 +1,36 @@
 // ── app.js ────────────────────────────────────────────────────────────────────
-// Entry point. Imports all modules and wires up event listeners + global refs.
+// Entry point — wires up all modules and exposes globals for HTML onclick handlers.
 
-import { initTheme, toggleSidebar }          from './ui.js';
-import { startCamera, stopCamera, analyzeFrame } from './camera.js';
-import { sendChat, clearAll }                from './messages.js';
-import { initSubjectOverride, overrideSubject } from './subject.js';
-
-marked.setOptions({ breaks: true, gfm: true });
+import { initTheme, toggleSidebar }               from './ui.js';
+import { startCamera, stopCamera, analyzeFrame }  from './camera.js';
+import { sendChat, clearAll }                     from './messages.js';
+import { initSubjectOverride, overrideSubject }   from './subject.js';
+import { toggleVoice, toggleTTS, stopSpeaking, setVolume, toggleLiveCamera } from './voice.js';
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-initTheme();
-initSubjectOverride();   // inject the subject dropdown into the header
 
-// ── Expose to inline HTML onclick handlers ────────────────────────────────────
-window.toggleSidebar  = toggleSidebar;
-window.startCamera    = startCamera;
-window.stopCamera     = stopCamera;
-window.analyzeFrame   = analyzeFrame;
-window.sendChat       = sendChat;
-window.clearAll       = clearAll;
-window.overrideSubject = overrideSubject;   // called by the dropdown onchange
+marked.setOptions({ breaks: true, gfm: true });
+initTheme();
+initSubjectOverride();   // inject subject dropdown into header
+
+// ── Expose globals for inline HTML onclick / oninput handlers ─────────────────
+
+window.toggleSidebar    = toggleSidebar;
+window.startCamera      = startCamera;
+window.stopCamera       = stopCamera;
+window.analyzeFrame     = analyzeFrame;
+window.sendChat         = sendChat;
+window.clearAll         = clearAll;
+window.overrideSubject  = overrideSubject;
+window.toggleVoice      = toggleVoice;
+window.toggleTTS        = toggleTTS;
+window.stopSpeaking     = stopSpeaking;
+window.setVolume        = setVolume;
+window.toggleLiveCamera = toggleLiveCamera;
 
 // ── Mobile tab switching ──────────────────────────────────────────────────────
-window.mobileTab = function(tab) {
+
+window.mobileTab = function (tab) {
   const body      = document.getElementById('body');
   const tabCamera = document.getElementById('tabCamera');
   const tabChat   = document.getElementById('tabChat');
@@ -37,21 +45,20 @@ window.mobileTab = function(tab) {
   }
 };
 
-// Show pip on camera tab when stream is live
+// Show pip dot on mobile camera tab when stream is live
 const _origStart = window.startCamera;
-window.startCamera = async function() {
+window.startCamera = async function () {
   await _origStart();
-  const pip = document.getElementById('tabPip');
-  if (pip) pip.classList.add('visible');
+  document.getElementById('tabPip')?.classList.add('visible');
 };
 const _origStop = window.stopCamera;
-window.stopCamera = function() {
+window.stopCamera = function () {
   _origStop();
-  const pip = document.getElementById('tabPip');
-  if (pip) pip.classList.remove('visible');
+  document.getElementById('tabPip')?.classList.remove('visible');
 };
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
+
 const chatInput = document.getElementById('chatInput');
 
 chatInput.addEventListener('keydown', e => {
@@ -65,8 +72,7 @@ chatInput.addEventListener('input', function () {
 
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' && !e.target.matches('button,textarea,input,select')) {
-    e.preventDefault();
-    analyzeFrame();
+    e.preventDefault(); analyzeFrame();
   }
   if (e.key === '[' && !e.target.matches('textarea,input,select')) {
     toggleSidebar();

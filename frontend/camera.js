@@ -1,9 +1,12 @@
 // ── camera.js ─────────────────────────────────────────────────────────────────
-import { state }                               from './state.js';
-import { setStatus, showToast, nowTime }       from './ui.js';
-import { appendSys, appendAI, removeSysMsgs, appendStreamingAI } from './messages.js';
-import { updateSubjectBadge }                  from './subject.js';
-import { attachExportBtn }                     from './export.js';
+import { state }           from './state.js';
+import { setStatus, showToast, nowTime } from './ui.js';
+import {
+  appendSys, removeSysMsgs,
+  appendStreamingAI, updateStreamingBubble, finaliseStreamingBubble,
+  updateStreamingLabel,
+} from './messages.js';
+import { updateSubjectBadge } from './subject.js';
 
 const API_BASE = 'http://localhost:3001';
 
@@ -48,8 +51,8 @@ export function stopCamera() {
   camIdle.classList.remove('gone');
   camBrackets.classList.remove('show');
   camNudge.classList.remove('visible');
-  state.hasAnalyzed     = false;
-  state.currentSubject  = 'Other';
+  state.hasAnalyzed    = false;
+  state.currentSubject = 'Other';
 
   setStatus('off', 'Camera offline');
   document.getElementById('btnStart').disabled   = false;
@@ -75,17 +78,25 @@ export async function analyzeFrame() {
   camScan.classList.add('active');
   setStatus('busy', 'Analyzing…');
 
-  // Capture frame
+  // Capture frame — counter-mirror because CSS mirrors the live preview
   canvas.width  = video.videoWidth  || 1280;
   canvas.height = video.videoHeight || 720;
-  // CSS mirrors the video display with scaleX(-1), so we must counter-mirror
-  // the canvas capture to send Gemini the correct unflipped orientation
   ctx.save();
   ctx.translate(canvas.width, 0);
   ctx.scale(-1, 1);
   ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
   ctx.restore();
   const b64 = canvas.toDataURL('image/jpeg', 0.88).split(',')[1];
+
+  // Update thumbnail
+  const thumb     = document.getElementById('camThumb');
+  const thumbTime = document.getElementById('camThumbTime');
+  const thumbWrap = document.getElementById('camThumbWrap');
+  if (thumb) {
+    thumb.src = 'data:image/jpeg;base64,' + b64;
+    if (thumbWrap) thumbWrap.style.display = '';
+  }
+  if (thumbTime) thumbTime.textContent = nowTime();
 
   camNudge.classList.remove('visible');
   state.hasAnalyzed = true;
@@ -97,57 +108,57 @@ export async function analyzeFrame() {
     const res = await fetch(`${API_BASE}/analyze`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ image: b64, subjectOverride: state.subjectManuallySet ? state.currentSubject : undefined }),
+      body:    JSON.stringify({
+        image: b64,
+        subjectOverride: state.subjectManuallySet ? state.currentSubject : undefined,
+      }),
     });
-
     if (!res.ok) throw new Error('Server error ' + res.status);
 
     const reader  = res.body.getReader();
     const decoder = new TextDecoder();
     let   buffer  = '';
-    let   streamEl = null;   // the streaming message bubble
+    let   streamEl = null;
     let   fullText = '';
 
     removeSysMsgs();
 
     while (true) {
       const { done, value } = await reader.read();
+      if (!done) buffer += decoder.decode(value, { stream: true });
 
-      if (!done) {
-        buffer += decoder.decode(value, { stream: true });
-      }
-
-      // Process all complete lines
       const lines = buffer.split('\n');
-      buffer = done ? '' : lines.pop(); // on done, process everything
+      buffer = done ? '' : lines.pop();
 
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
         const raw = line.slice(6).trim();
         if (!raw || raw === '[DONE]') continue;
-        let event;
-        try { event = JSON.parse(raw); } catch (_) { continue; }
+        let ev;
+        try { ev = JSON.parse(raw); } catch (_) { continue; }
 
-        if (event.subject !== undefined) {
-          updateSubjectBadge(event.subject);
+        if (ev.subject !== undefined) {
+          updateSubjectBadge(ev.subject);
+          if (streamEl) updateStreamingLabel(streamEl, ev.subject);
           state.conversationHistory.push({ role: 'user', content: '[Student showed a whiteboard/notebook frame]' });
-        } else if (event.text !== undefined) {
-          fullText += event.text;
+        } else if (ev.text !== undefined) {
+          fullText += ev.text;
           if (!streamEl) streamEl = appendStreamingAI();
-          updateStreamingAI(streamEl, fullText);
-        } else if (event.observation !== undefined || event.done !== undefined) {
-          if (streamEl) finaliseStreamingAI(streamEl, fullText);
-          state.conversationHistory.push({ role: 'model', content: fullText });
-          if (window.mobileTab && window.innerWidth <= 700) window.mobileTab('chat');
-        } else if (event.error) {
-          throw new Error(event.error);
+          updateStreamingBubble(streamEl, fullText);
+        } else if (ev.observation !== undefined || ev.done !== undefined) {
+          if (streamEl) {
+            finaliseStreamingBubble(streamEl, fullText); // gets copy + export + "what I saw"
+            state.conversationHistory.push({ role: 'model', content: fullText });
+            if (window.mobileTab && window.innerWidth <= 700) window.mobileTab('chat');
+          }
+        } else if (ev.error) {
+          throw new Error(ev.error);
         }
       }
 
-      // Guaranteed finalise when stream physically ends
       if (done) {
         if (streamEl && streamEl.classList.contains('streaming')) {
-          finaliseStreamingAI(streamEl, fullText);
+          finaliseStreamingBubble(streamEl, fullText);
           state.conversationHistory.push({ role: 'model', content: fullText });
         }
         break;
@@ -170,95 +181,4 @@ export async function analyzeFrame() {
       btn.disabled    = false;
     }, 1400);
   }
-}
-
-// ── Streaming bubble helpers (used only by camera.js) ─────────────────────────
-function toPlainText(md) {
-  return md
-    .replace(/<details>[\s\S]*?<\/details>/gi, '')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/\*(.+?)\*/g, '$1')
-    .replace(/`{3}[\s\S]*?`{3}/g, '')
-    .replace(/`(.+?)`/g, '$1')
-    .replace(/\$\$(.+?)\$\$/gs, '$1')
-    .replace(/\$(.+?)\$/g, '$1')
-    .replace(/^[-*]\s+/gm, '• ')
-    .replace(/^\d+\.\s+/gm, '')
-    .replace(/^---+$/gm, '')
-    .replace(/💡\s*/g, '')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
-}
-
-function updateStreamingAI(el, markdown) {
-  const bubble = el.querySelector('.msg-bubble');
-  if (!bubble) return;
-  bubble.innerHTML = '<pre class="stream-plain">' + markdown.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</pre><span class="stream-cursor"></span>';
-  const msgs = document.getElementById('messages');
-  const nearBottom = msgs.scrollHeight - msgs.scrollTop - msgs.clientHeight < 120;
-  if (nearBottom) msgs.scrollTop = msgs.scrollHeight;
-}
-
-function finaliseStreamingAI(el, markdown) {
-  el.classList.remove('streaming');
-
-  // Strip <details> block before rendering
-  const detailsMatch = markdown.match(/<details>[\s\S]*?<\/details>/i);
-  const cleanMarkdown = markdown.replace(/<details>[\s\S]*?<\/details>/i, '').trim();
-
-  const bubble = el.querySelector('.msg-bubble');
-  if (bubble) {
-    bubble.innerHTML = marked.parse(cleanMarkdown);
-    bubble.querySelectorAll('.stream-cursor').forEach(c => c.remove());
-    bubble.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
-    renderMathInElement(bubble, {
-      delimiters: [
-        { left: '$$', right: '$$', display: true  },
-        { left: '$',  right: '$',  display: false },
-        { left: '\\(', right: '\\)', display: false },
-        { left: '\\[', right: '\\]', display: true  },
-      ],
-      throwOnError: false,
-    });
-  }
-
-  // Top-right row: copy + export
-  const topRight = document.createElement('div');
-  topRight.className = 'msg-top-right';
-
-  const copyBtn = document.createElement('button');
-  copyBtn.className = 'copy-btn';
-  copyBtn.title = 'Copy response';
-  copyBtn.textContent = 'Copy';
-  copyBtn.addEventListener('click', () => {
-    navigator.clipboard.writeText(toPlainText(cleanMarkdown)).then(() => {
-      copyBtn.textContent = 'Copied ✓';
-      copyBtn.classList.add('copied');
-      setTimeout(() => { copyBtn.textContent = 'Copy'; copyBtn.classList.remove('copied'); }, 2000);
-    });
-  });
-  topRight.appendChild(copyBtn);
-  el.appendChild(topRight);
-
-  // Export dropdown
-  attachExportBtn(el);
-
-  // "What I saw" footnote
-  if (detailsMatch) {
-    const seenText = detailsMatch[0]
-      .replace(/<summary>.*?<\/summary>/i, '')
-      .replace(/<\/?details>/gi, '')
-      .trim();
-    const footnote = document.createElement('div');
-    footnote.className = 'msg-seen-footnote';
-    footnote.innerHTML = `<span class="msg-seen-toggle">👁 what I saw</span><span class="msg-seen-text">${seenText}</span>`;
-    footnote.querySelector('.msg-seen-toggle').addEventListener('click', () => {
-      footnote.classList.toggle('expanded');
-    });
-    el.appendChild(footnote);
-  }
-
-  const msgs = document.getElementById('messages');
-  msgs.scrollTop = msgs.scrollHeight;
 }

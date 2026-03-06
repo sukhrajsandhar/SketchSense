@@ -134,8 +134,43 @@
       </div>
 
       <div class="chat-input-wrap">
+
+        <!-- Live video PiP — shown during voice+video session -->
+        <div class="pip-wrap" id="pipWrap">
+          <video id="pipVideo" autoplay muted playsinline></video>
+          <div class="pip-label">Live</div>
+        </div>
+
         <div class="chat-input-inner">
+          <button id="btnMic" data-state="idle" title="Start live voice" onclick="toggleVoice()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="2" width="6" height="11" rx="3"/>
+              <path d="M5 10a7 7 0 0 0 14 0"/>
+              <line x1="12" y1="19" x2="12" y2="22"/>
+              <line x1="8"  y1="22" x2="16" y2="22"/>
+            </svg>
+          </button>
+          <button id="btnCam" title="Share camera with AI" onclick="toggleLiveCamera()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 7l-7 5 7 5V7z"/>
+              <rect x="1" y="5" width="15" height="14" rx="2"/>
+            </svg>
+          </button>
           <textarea id="chatInput" placeholder="Ask a follow-up question…" rows="1"></textarea>
+          <div class="volume-wrap" title="AI voice volume">
+            <svg class="volume-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.05" value="1" oninput="setVolume(this.value)" title="Volume"/>
+          </div>
+          <button id="btnTTS" class="tts-on" title="Mute AI voice" onclick="toggleTTS()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+              <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+            </svg>
+          </button>
           <button id="btnSend" onclick="sendChat()">Send</button>
         </div>
       </div>

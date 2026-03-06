@@ -2,16 +2,17 @@
 // Single source of truth for all shared app state.
 
 export const state = {
+  // Camera
   stream:              null,
   frameCount:          0,
-  busy:                false,
-  chatBusy:            false,
-  conversationHistory: [],
+  busy:                false,     // analyze is running
+  chatBusy:            false,     // chat fetch is running
   hasAnalyzed:         false,
 
-  // ── Subject detection ──────────────────────────────────────────────────────
-  // Set by /analyze response or manual override in subject.js
-  currentSubject:     'Other',
-  // True when the student has manually selected a subject via the dropdown
-  subjectManuallySet: false,
+  // Conversation
+  conversationHistory: [],
+
+  // Subject detection
+  currentSubject:      'Other',
+  subjectManuallySet:  false,     // true when student picked from dropdown
 };
